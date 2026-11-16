@@ -1,0 +1,4 @@
+# Anthropic-owned domains not covered by blackmatrix7 lists yet.
+HOST-SUFFIX,claude.com,Anthropic
+HOST-SUFFIX,claudeusercontent.com,Anthropic
+HOST-SUFFIX,claudemcpcontent.com,Anthropic

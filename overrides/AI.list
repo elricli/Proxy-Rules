@@ -1,0 +1,5 @@
+# OpenAI-owned domains not covered by blackmatrix7 lists yet.
+HOST-SUFFIX,sora.com,AI
+HOST-SUFFIX,gpt.com,AI
+HOST-SUFFIX,openai.org,AI
+HOST-SUFFIX,oaistatsig.com,AI

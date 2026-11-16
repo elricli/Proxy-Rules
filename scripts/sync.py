@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Sync upstream Quantumult X rule lists into rules/, merging overrides on top.
+
+One output file per policy group. Each output merges all upstream lists that
+feed that group, plus an optional overrides/<Name>.list for domains upstream
+does not cover yet. Rules are normalized, deduped, and sorted so that weekly
+commits only happen when rules actually change.
+
+Any upstream fetch failure aborts the whole run (exit 1) so a stale or
+renamed upstream can never silently shrink a list.
+"""
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+RULES_DIR = REPO / "rules"
+OVERRIDES_DIR = REPO / "overrides"
+
+BASE = "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX"
+
+# Output name -> upstream lists that feed it (one output per Quantumult X policy group).
+LISTS = {
+    "Advertising": [f"{BASE}/AdvertisingLite/AdvertisingLite.list", f"{BASE}/Advertising/Advertising.list"],
+    "AI": [f"{BASE}/OpenAI/OpenAI.list", f"{BASE}/Gemini/Gemini.list", f"{BASE}/Copilot/Copilot.list"],
+    "Anthropic": [f"{BASE}/Anthropic/Anthropic.list", f"{BASE}/Claude/Claude.list"],
+    "YouTube": [f"{BASE}/YouTube/YouTube.list"],
+    "Netflix": [f"{BASE}/Netflix/Netflix.list"],
+    "Disney": [f"{BASE}/Disney/Disney.list"],
+    "TikTok": [f"{BASE}/TikTok/TikTok.list"],
+    "Social": [
+        f"{BASE}/Telegram/Telegram.list",
+        f"{BASE}/Twitter/Twitter.list",
+        f"{BASE}/Facebook/Facebook.list",
+        f"{BASE}/Instagram/Instagram.list",
+    ],
+    "Spotify": [f"{BASE}/Spotify/Spotify.list"],
+    "GitHub": [f"{BASE}/GitHub/GitHub.list"],
+    "Google": [f"{BASE}/Google/Google.list"],
+    "Microsoft": [f"{BASE}/Microsoft/Microsoft.list"],
+    "OneDrive": [f"{BASE}/OneDrive/OneDrive.list"],
+    "Apple": [
+        f"{BASE}/Apple/Apple.list",
+        f"{BASE}/AppStore/AppStore.list",
+        f"{BASE}/iCloud/iCloud.list",
+        f"{BASE}/TestFlight/TestFlight.list",
+    ],
+    "PayPal": [f"{BASE}/PayPal/PayPal.list"],
+    "Crypto": [f"{BASE}/Crypto/Crypto.list"],
+    "Games": [f"{BASE}/Steam/Steam.list", f"{BASE}/Epic/Epic.list"],
+    "BiliBili": [f"{BASE}/BiliBili/BiliBili.list"],
+    "Cloudflare": [f"{BASE}/Cloudflare/Cloudflare.list"],
+}
+
+
+def fetch(url: str, retries: int = 3) -> str:
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "elricli/QuantumultX-List sync"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except Exception as exc:  # noqa: BLE001 - retry on any network error
+            last = exc
+            time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"fetch failed after {retries} tries: {url}: {last}")
+
+
+def parse_rules(text: str, tag: str, out: list[str], seen: set[tuple[str, str]]) -> int:
+    """Add rules from text into out (deduped by type+value). Returns count added."""
+    count = 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", ";", "//")):
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2:
+            continue
+        rtype, value = parts[0].upper(), parts[1]
+        if not value:
+            continue
+        key = (rtype, value.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(f"{rtype},{value},{tag}")
+        count += 1
+    return count
+
+
+def main() -> int:
+    failures: list[str] = []
+    RULES_DIR.mkdir(exist_ok=True)
+
+    for name, upstreams in LISTS.items():
+        lines: list[str] = []
+        seen: set[tuple[str, str]] = set()
+        sources: list[str] = []
+
+        override_path = OVERRIDES_DIR / f"{name}.list"
+        if override_path.exists():
+            added = parse_rules(override_path.read_text(encoding="utf-8"), name, lines, seen)
+            sources.append(f"overrides ({added})")
+
+        list_ok = True
+        for url in upstreams:
+            src = url.rstrip("/").split("/")[-2]
+            try:
+                text = fetch(url)
+            except Exception as exc:  # noqa: BLE001
+                failures.append(f"{name}: {exc}")
+                print(f"ERROR: {exc}", file=sys.stderr)
+                list_ok = False
+                continue
+            added = parse_rules(text, name, lines, seen)
+            sources.append(f"{src} ({added})")
+
+        if not list_ok:
+            print(f"skipping {name}.list (upstream failure this run)", file=sys.stderr)
+            continue
+
+        # Stable sort -> clean weekly diffs (precision matching makes in-file order irrelevant).
+        lines.sort(key=lambda ln: (ln.split(",")[0], ln.split(",")[1].lower()))
+        header = [
+            f"# QuantumultX-List — {name}",
+            "# GENERATED by scripts/sync.py — do not edit this file;",
+            "# add missing domains in overrides/ instead (merged first, highest priority).",
+            f"# Sources: {' + '.join(sources)}",
+            f"# Rules: {len(lines)}",
+            "",
+        ]
+        (RULES_DIR / f"{name}.list").write_text("\n".join(header + lines) + "\n", encoding="utf-8")
+        print(f"rules/{name}.list: {len(lines)} rules")
+
+    if failures:
+        print(f"\n{len(failures)} upstream failure(s); affected lists not rewritten.", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
