@@ -1,4 +1,4 @@
-# Pull upstream rule lists, merge overrides, commit generated rules weekly.
+# Pull upstream rule lists, merge overrides, export Clash ruleset, commit weekly.
 name: Sync upstream lists
 
 on:
@@ -23,11 +23,14 @@ jobs:
       - name: Fetch upstreams and regenerate rules/
         run: python3 scripts/sync.py
 
+      - name: Export combined Clash ruleset
+        run: python3 scripts/export_clash.py
+
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add rules/
+          git add rules/ clash/
           if git diff --cached --quiet; then
             echo "No rule changes this run."
             exit 0
