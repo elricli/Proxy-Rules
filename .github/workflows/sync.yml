@@ -1,3 +1,4 @@
+# Pull upstream rule lists, merge overrides, commit generated rules weekly.
 name: Sync upstream lists
 
 on:
