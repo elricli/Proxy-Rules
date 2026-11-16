@@ -1,6 +1,6 @@
 # QuantumultX-List
 
-自维护的 Quantumult X 分流规则列表，**一个策略组一个文件**，每周一自动从上游（[blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)）同步合并，并叠加自己补充的域名。
+自维护的 Quantumult X 分流规则列表，**一个策略组一个文件，另加 proxy/direct 两个减法兜底**，每周一自动从上游（[blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)）同步合并，并叠加自己补充的域名。
 
 ## 为什么要自维护
 
@@ -11,7 +11,7 @@
 ```
 rules/            生成的最终列表 ← QX 订阅这些（不要手改）
 overrides/        自己补充的域名，合并时优先生效（在这里加域名）
-scripts/sync.py   同步脚本：拉上游 → 合并 override → 去重 → 排序 → 生成 rules/
+scripts/sync.py   同步脚本：拉上游 → 合并 override → 去重 → 排序 → 兜底列表做减法 → 生成 rules/
 .github/          每周一 03:00 UTC 自动跑一次同步，有变化才提交
 ```
 
@@ -36,6 +36,28 @@ scripts/sync.py   同步脚本：拉上游 → 合并 override → 去重 → �
 | `rules/Games.list` | 🎮 游戏平台 | Steam + Epic |
 | `rules/BiliBili.list` | 📺 BiliBili | BiliBili |
 | `rules/Cloudflare.list` | 🌐 Cloudflare | Cloudflare |
+| `rules/Proxy.list` | proxy（兜底代理） | LinkedIn + Global，**减去上层已收编的规则** |
+| `rules/Direct.list` | direct（兜底直连） | ChinaMax + Direct，**减去上层已收编的规则** |
+
+## 优先级与减法
+
+Quantult X 跨远程列表按**后缀精度**匹配（更长的后缀赢），列表声明顺序不保证优先级。
+本仓库在生成时用减法强制实现这个优先级：
+
+```
+策略组列表（AI、Google、Apple…） > Proxy.list > Direct.list > 配置里的 final
+```
+
+`Proxy.list` / `Direct.list` 生成时，任何已被更高优先级列表收编的规则会被自动删除：
+
+- 后缀 / HOST / 通配规则：域名本身或其任意**父后缀**出现在上层列表 → 删（等长对冲不了更长的后缀，直接不留）
+- 后缀 / HOST / 通配规则：域名**包含上层列表声明的关键字** → 删
+- 关键字规则：与上层列表的关键字完全相同 → 删
+- IP 段：整段落在上层列表已收编的网段之内 → 删
+- 其余类型（USER-AGENT、IP-ASN 等）：与上层完全相同 → 删
+
+所以即使上游（如 Global）未来新增更长的后缀，也抢不走策略组列表的流量——这正是
+blackmatrix7 Proxy.list 曾经劫持 `chat.openai.com` 的原因，现在这个类别的问题在生成阶段就被消灭。
 
 ## 用法
 
@@ -44,6 +66,13 @@ scripts/sync.py   同步脚本：拉上游 → 合并 override → 去重 → �
 ```ini
 https://raw.githubusercontent.com/elricli/QuantumultX-List/main/rules/AI.list, tag=AI, force-policy=🤖 AI, update-interval=86400, opt-parser=false, enabled=true
 https://raw.githubusercontent.com/elricli/QuantumultX-List/main/rules/Anthropic.list, tag=Anthropic, force-policy=🅐 Anthropic, update-interval=86400, opt-parser=false, enabled=true
+```
+
+兜底列表放最后（策略组 → Proxy → Direct → final）：
+
+```ini
+https://raw.githubusercontent.com/elricli/QuantumultX-List/main/rules/Proxy.list, tag=Proxy, force-policy=proxy, update-interval=86400, opt-parser=false, enabled=true
+https://raw.githubusercontent.com/elricli/QuantumultX-List/main/rules/Direct.list, tag=Direct, force-policy=direct, update-interval=86400, opt-parser=false, enabled=true
 ```
 
 其余列表同理。直连 raw.githubusercontent.com 不稳时可换 jsdelivr 镜像：
@@ -60,7 +89,8 @@ https://cdn.jsdelivr.net/gh/elricli/QuantumultX-List@main/rules/AI.list, tag=AI,
 HOST-SUFFIX,example.com,AI
 ```
 
-注意：`overrides/` 合并时排在最前，但跨列表冲突仍按后缀精度解析——被上游更长的后缀抢走时，需要在 overrides 里用**等长后缀**对冲。
+注意：`overrides/` 合并时排在最前。兜底列表（Proxy/Direct）已被减法挡住，不会再抢策略组的域名；
+但两个策略组列表之间（如 Google 与 YouTube）仍按后缀精度解析，同域名重复声明时在配置里先声明的赢。
 
 ## 同步机制
 

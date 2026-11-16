@@ -1,4 +1,9 @@
 # Anthropic-owned domains not covered by blackmatrix7 lists yet.
+# claude.app/claude.new 302 -> claude.ai; claude.dev = Anthropic tech blog; claude.site = Claude Sites (artifact publishing).
 HOST-SUFFIX,claude.com,Anthropic
 HOST-SUFFIX,claudeusercontent.com,Anthropic
 HOST-SUFFIX,claudemcpcontent.com,Anthropic
+HOST-SUFFIX,claude.app,Anthropic
+HOST-SUFFIX,claude.dev,Anthropic
+HOST-SUFFIX,claude.new,Anthropic
+HOST-SUFFIX,claude.site,Anthropic
