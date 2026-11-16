@@ -7,21 +7,13 @@
 
 根目录按客户端分目录：OpenClash 与 Clash 同为 mihomo 内核、classical 格式完全通用，共用 `clash/` 一个目录；后续支持其他客户端（如 Surge）时新增目录即可。
 
+维护者的操作手册（布局、生成流程、不变量、常见任务、环境坑）见 [AGENTS.md](AGENTS.md)；本 README 只面向使用者。
+
 ## 为什么要自维护
 
 第三方大杂烩列表之间会互相抢流量：Quantult X 默认开启「分流匹配优化」后，跨远程列表按**后缀精度**匹配（更长的后缀赢），列表作者的规则精度你控制不了。自维护后，每个域名的后缀长度、合并来源、更新节奏都由自己决定。
 
-## 结构
-
-```
-quantumultx/            QX 格式生成的最终列表 ← QX 订阅这些（不要手改）
-clash/Global.list       Clash 全局规则（广告已拆出，~16 万条 / 5.7MB）← Clash/OpenClash 引用（不要手改）
-clash/Advertising.list  广告拦截单独一份（~30 万条 / 11MB，占大头，按需引用）
-overrides/              自己补充的域名，合并时优先生效（在这里加域名）
-scripts/sync.py         同步脚本：拉上游 → 合并 override → 去重 → 排序 → 兜底列表做减法 → 生成 quantumultx/
-scripts/export_clash.py 转换脚本：quantumultx/*.list → clash/（离线，不联网）
-.github/                每周日 03:00 UTC 自动跑一次同步 + 导出，有变化才提交
-```
+## 组列表
 
 | 文件 | 对应策略组 | 上游来源 |
 |---|---|---|
@@ -56,13 +48,7 @@ Quantult X 跨远程列表按**后缀精度**匹配（更长的后缀赢），�
 策略组列表（AI、Google、Apple…） > Proxy.list > Direct.list > 配置里的 final
 ```
 
-`Proxy.list` / `Direct.list` 生成时，任何已被更高优先级列表收编的规则会被自动删除：
-
-- 后缀 / HOST / 通配规则：域名本身或其任意**父后缀**出现在上层列表 → 删（等长对冲不了更长的后缀，直接不留）
-- 后缀 / HOST / 通配规则：域名**包含上层列表声明的关键字** → 删
-- 关键字规则：与上层列表的关键字完全相同 → 删
-- IP 段：整段落在上层列表已收编的网段之内 → 删
-- 其余类型（USER-AGENT、IP-ASN 等）：与上层完全相同 → 删
+`Proxy.list` / `Direct.list` 生成时，任何已被更高优先级列表收编的规则会被自动删除（父后缀覆盖、关键字包含、IP 段包含等，细则见 `scripts/sync.py` 与 [AGENTS.md](AGENTS.md)）。
 
 所以即使上游（如 Global）未来新增更长的后缀，也抢不走策略组列表的流量——这正是
 blackmatrix7 Proxy.list 曾经劫持 `chat.openai.com` 的原因，现在这个类别的问题在生成阶段就被消灭。
