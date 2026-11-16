@@ -1,6 +1,6 @@
 # Proxy-Rules
 
-自维护的分流规则列表，**一个策略组一个文件，另加 proxy/direct 两个减法兜底**，每周一自动从上游（[blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)）同步合并，并叠加自己补充的域名。同一份规则导出两种格式：
+自维护的分流规则列表，**一个策略组一个文件，另加 proxy/direct 两个减法兜底**，每周日自动从上游（[blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)）同步合并，并叠加自己补充的域名。同一份规则导出两种格式：
 
 - **Quantult X**：`rules/*.list`，一个策略组一个文件
 - **Clash / OpenClash（mihomo 内核）**：`clash/Global.list`，一份合并的全局规则，classical rule-provider 直接远端引用
@@ -17,7 +17,7 @@ clash/Global.list       合并后的 Clash 全局规则 ← OpenClash rule-provi
 overrides/              自己补充的域名，合并时优先生效（在这里加域名）
 scripts/sync.py         同步脚本：拉上游 → 合并 override → 去重 → 排序 → 兜底列表做减法 → 生成 rules/
 scripts/export_clash.py 转换脚本：rules/*.list → clash/Global.list（离线，不联网）
-.github/                每周一 03:00 UTC 自动跑一次同步 + 导出，有变化才提交
+.github/                每周日 03:00 UTC 自动跑一次同步 + 导出，有变化才提交
 ```
 
 | 文件 | 对应策略组 | 上游来源 |
@@ -115,7 +115,7 @@ rules:
 
 ## 加域名
 
-在 `overrides/<名称>.list` 里加一行（格式：`规则类型,值,名称`，`#` 开头是注释），提交即可。可以手动跑 `python3 scripts/sync.py && python3 scripts/export_clash.py` 立即重新生成，也可以等每周一的自动同步：
+在 `overrides/<名称>.list` 里加一行（格式：`规则类型,值,名称`，`#` 开头是注释），提交即可。可以手动跑 `python3 scripts/sync.py && python3 scripts/export_clash.py` 立即重新生成，也可以等每周日的自动同步：
 
 ```ini
 HOST-SUFFIX,example.com,AI
@@ -126,6 +126,6 @@ HOST-SUFFIX,example.com,AI
 
 ## 同步机制
 
-- 每周一 03:00 UTC（北京时间周一 11:00）GitHub Actions 自动运行，也支持手动触发：`sync.py` 同步 `rules/` → `export_clash.py` 导出 `clash/Global.list`
+- 每周日 03:00 UTC（北京时间周日 11:00）GitHub Actions 自动运行，也支持手动触发：`sync.py` 同步 `rules/` → `export_clash.py` 导出 `clash/Global.list`
 - 上游拉取失败会**整体中止**（退出码 1），绝不提交缺料的列表
 - 规则排序去重后写入，无变化不产生空提交
