@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync upstream Quantumult X rule lists into rules/, merging overrides on top.
+"""Sync upstream Quantumult X rule lists into quantumultx/, merging overrides on top.
 
 Two tiers of outputs:
 
@@ -29,7 +29,7 @@ from bisect import bisect_right
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-RULES_DIR = REPO / "rules"
+RULES_DIR = REPO / "quantumultx"
 OVERRIDES_DIR = REPO / "overrides"
 
 BASE = "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX"
@@ -208,7 +208,7 @@ def generate_list(
     upstreams: list[str],
     claims: Claims | None,
 ) -> list[tuple[str, str]] | None:
-    """Merge override + upstreams into rules/<name>.list.
+    """Merge override + upstreams into quantumultx/<name>.list.
 
     With claims=None (service lists) everything survives. With claims set
     (catch-alls), rules already claimed by higher-priority lists are subtracted.
@@ -275,7 +275,7 @@ def generate_list(
     header.extend([f"# Rules: {len(lines)}", ""])
     (RULES_DIR / f"{name}.list").write_text("\n".join(header + lines) + "\n", encoding="utf-8")
     extra = f" (subtracted {sum(removed.values())})" if claims is not None else ""
-    print(f"rules/{name}.list: {len(lines)} rules{extra}")
+    print(f"quantumultx/{name}.list: {len(lines)} rules{extra}")
     return rules
 
 

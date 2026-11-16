@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch upstreams and regenerate rules/
+      - name: Fetch upstreams and regenerate quantumultx/
         run: python3 scripts/sync.py
 
       - name: Export combined Clash ruleset
@@ -30,10 +30,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add rules/ clash/
+          git add quantumultx/ clash/
           if git diff --cached --quiet; then
             echo "No rule changes this run."
             exit 0
           fi
-          git commit -m "sync: refresh rules from upstream ($(date -u +%F))"
+          git commit -m "sync: refresh quantumultx + clash rules from upstream ($(date -u +%F))"
           git push
