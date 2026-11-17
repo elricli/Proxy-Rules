@@ -2,8 +2,8 @@
 
 自维护的分流规则列表，**一个策略组一个文件，另加 proxy/direct 两个减法兜底**，每周日自动从上游（[blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)）同步合并，并叠加自己补充的域名。同一份规则导出两种格式：
 
-- **Quantult X**：`quantumultx/*.list`，一个策略组一个文件
-- **Clash / OpenClash（mihomo 内核）**：`clash/Global.list` 全局合并 + `clash/Advertising.list` 广告单独拆分，classical rule-provider 直接远端引用
+- **Quantumult X**：`quantumultx/*.list`，一个策略组一个文件
+- **Clash / OpenClash（mihomo 内核）**：`clash/<组名>.list` 一组一个文件，外加两份即贴片段（`clash/verge-merge.yaml`、`clash/openclash-module.ini`，脚本随周更自动生成）
 
 根目录按客户端分目录：OpenClash 与 Clash 同为 mihomo 内核、classical 格式完全通用，共用 `clash/` 一个目录；后续支持其他客户端（如 Surge）时新增目录即可。
 
@@ -11,7 +11,7 @@
 
 ## 为什么要自维护
 
-第三方大杂烩列表之间会互相抢流量：Quantult X 默认开启「分流匹配优化」后，跨远程列表按**后缀精度**匹配（更长的后缀赢），列表作者的规则精度你控制不了。自维护后，每个域名的后缀长度、合并来源、更新节奏都由自己决定。
+第三方大杂烩列表之间会互相抢流量：Quantumult X 默认开启「分流匹配优化」后，跨远程列表按**后缀精度**匹配（更长的后缀赢），列表作者的规则精度你控制不了。自维护后，每个域名的后缀长度、合并来源、更新节奏都由自己决定。
 
 ## 组列表
 
@@ -41,7 +41,7 @@
 
 ## 优先级与减法
 
-Quantult X 跨远程列表按**后缀精度**匹配（更长的后缀赢），列表声明顺序不保证优先级。
+Quantumult X 跨远程列表按**后缀精度**匹配（更长的后缀赢），列表声明顺序不保证优先级。
 本仓库在生成时用减法强制实现这个优先级：
 
 ```
@@ -75,77 +75,33 @@ https://raw.githubusercontent.com/elricli/Proxy-Rules/main/quantumultx/Direct.li
 https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/quantumultx/AI.list, tag=AI, force-policy=🤖 AI, update-interval=86400, opt-parser=false, enabled=true
 ```
 
-## 用法 — OpenClash / Clash（mihomo）
+## 用法 — Clash / OpenClash（mihomo 内核）
 
-需要 mihomo 内核（OpenClash 默认内核即是）。两种接入方式任选其一。
+需要 mihomo 内核。**关键语义（源码验证）**：mihomo **忽略** classical 规则文件里第三列的策略——`ParseRulePayload(rule, false)` 把第三列按规则参数解析，tunnel 按 `RULE-SET` 行自己的策略选路。所以**一个策略组一个 provider 文件**；下面的粘贴片段由脚本随周更自动生成，组名与顺序永远和生成物同步。
 
-### 方式一：OpenClash「全局扩展覆写配置」直接粘贴（推荐）
+`RULE-SET` 顺序即优先级（first-match-wins）：`广告 REJECT → 服务组（具体在前）→ Proxy → Direct`，与 QX 侧的减法优先级一致。
 
-插件设置 → 覆写设置 →「全局扩展覆写配置」编辑器里整段粘贴即可。`[YAML]` 是覆写模块的段名；`+` 前缀 = `+rule-providers` 合并 provider、`+rules` 把规则**前置**到订阅自带规则之前：
+### 方式一：Clash Verge Rev「全局扩展覆写配置」
 
-```ini
-[YAML]
-+rule-providers:
-  proxy-rules-ads:
-    type: http
-    behavior: classical
-    format: text
-    url: https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/clash/Advertising.list
-    interval: 86400
-    path: ./ruleset/proxy-rules-ads.list
-  proxy-rules:
-    type: http
-    behavior: classical
-    format: text
-    url: https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/clash/Global.list
-    interval: 86400
-    path: ./ruleset/proxy-rules.list
+订阅页 → 更多/全局 →「全局扩展覆写配置」编辑器，粘贴 [`clash/verge-merge.yaml`](clash/verge-merge.yaml) 全文：
 
-+rules:
-  - RULE-SET,proxy-rules-ads,REJECT
-  - RULE-SET,proxy-rules,DIRECT
-```
+- `rule-providers` 深合并进配置；`rules` **整体替换**订阅的规则（片段末行带 `MATCH` 兜底），即完整接管分流
+- 片段里的策略组名（🤖 AI、🅐 Anthropic…）必须和你配置里的 proxy-groups 逐字符一致——不同就改 `scripts/export_clash.py` 的 `POLICY` 表重跑
+- 注意：网上旧教程的 `prepend-rules` / `append-rules` 在当前 Verge Rev 源码里**不存在**（`enhance/merge.rs` 只有深合并），勿用
 
-- URL 默认用 jsDelivr 镜像（路由器直连可达）；路由器能直连 GitHub 就换成 `https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash/...`
-- 两行 `RULE-SET` 的第三参（`REJECT`/`DIRECT`）只是占位：classical 文件里**每条规则自带策略目标**（广告→`REJECT`、国内→`DIRECT`、服务→策略组名），真正生效的是文件内嵌的组名——所以组名核对/修改去 `scripts/export_clash.py` 的 `POLICY` 表，不在这段里
-- 这段覆写模块因此是纯 ASCII，天然避开部分 OpenClash/iStoreOS 环境覆写模块 `[YAML]` 段损坏中文/Emoji 策略组名的[已知坑](https://github.com/vernesong/OpenClash/discussions/5049)
-- 没被两个文件覆盖到的流量，落到订阅配置自带规则兜底，不会断流
+### 方式二：OpenClash 覆写模块
 
-### 方式二：完全自定义配置 / 其他 Clash 客户端
+运行状态页顶部「覆写模块」按钮 → 添加新模块（本地模块，匹配配置文件填 `all`）→ 编辑器粘贴 [`clash/openclash-module.ini`](clash/openclash-module.ini) → 打开模块开关 → **重启插件**（`reload` 不会重跑覆写）：
 
-`rule-providers` + `rules` 直接写进配置文件：
+- `[YAML]` 段必需；`+rule-providers` 合并 provider，`+rules` 把 `RULE-SET` 行**前置**到订阅规则之前——没覆盖到的流量落回订阅规则兜底
+- 部分环境会损坏 `[YAML]` 段里的中文/Emoji 组名（现象：`proxy not found` / `????`），遇此按[官方讨论 #5049](https://github.com/vernesong/OpenClash/discussions/5049)改用 `[Overwrite]` 段 ruby 方案
+- provider URL 用 jsDelivr 镜像（路由器直连可达）
 
-```yaml
-rule-providers:
-  ads:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash/Advertising.list
-    interval: 86400
-    path: ./ruleset/ads.list
-  proxy-rules:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash/Global.list
-    interval: 86400
-    path: ./ruleset/proxy-rules.list
+### 组文件与裁剪
 
-rules:
-  - RULE-SET,ads,REJECT            # 广告拦截（~30 万条 / 11MB，按需引用）
-  - RULE-SET,proxy-rules,DIRECT    # 占位：文件里每条规则自带策略目标
-  - MATCH,🚀 节点选择
-```
-
-说明：
-
-- 文件内每条规则自带策略目标：广告 → `REJECT`、国内 → `DIRECT`、其余 → 策略组名。**组名必须和你配置里的 proxy-groups 一致**（逐字符一致，含 Emoji），不一致就改 `scripts/export_clash.py` 里的 `POLICY` 表重跑。
-- 顺序即优先级（first-match-wins）：`广告 REJECT → 服务组（具体在前）→ Proxy → Direct`，与 QX 侧的减法优先级一致，跨组重复域名已在导出时去重（先出现的赢）。
-- 广告占全量 2/3（~30 万条 / 11MB），所以从全局文件拆出单放 `clash/Advertising.list`：全局文件只含 ~16 万条 / 5.7MB；不需要广告拦截就不引 `ads` 这个 provider。
-- 还想再裁：`scripts/export_clash.py` 的 `SKIP` 里加组名重跑，该组完全不导出。
-- 直连 raw.githubusercontent.com 不稳时可换 jsdelivr 镜像（jsDelivr 单文件上限 20MB，`Advertising.list` 11MB 未超但别再大）：
-  `https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/clash/Global.list`
+- `clash/` 下一个组一个文件，组列表与 quantumultx/ 完全一致（见上表）；不需要的组不引对应的 `RULE-SET` 行即可
+- Advertising 一家 ~30 万条 / 11MB，低端路由器吃紧时在 `scripts/export_clash.py` 的 `SKIP` 里加组名重跑，该组（含粘贴片段里的行）完全不导出
+- jsDelivr 单文件上限 20MB（`Advertising.list` 11MB 未超但别再大）；能直连 GitHub 的场景可把片段 URL 换成 `https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash/<Group>.list`
 
 ## 加域名
 

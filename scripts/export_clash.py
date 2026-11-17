@@ -1,43 +1,29 @@
 #!/usr/bin/env python3
-"""Export the generated quantumultx/ lists as Clash/mihomo rulesets.
+"""Export the generated quantumultx/ lists as per-policy Clash/mihomo rulesets.
 
-Reads the machine-generated quantumultx/*.list files (Quantumult X format,
-already fetched/merged/subtracted by scripts/sync.py) and converts them into
-classical rule-providers (format: text) for Clash / OpenClash (mihomo core):
+WHY PER-POLICY FILES: mihomo IGNORES the policy column embedded in classical
+ruleset lines — ParseRulePayload(rule, false) parses the 3rd column as rule
+params, and the tunnel routes everything a RULE-SET matches to the RULE-SET
+line's own policy (rules/provider/rule_set.go returns rs.adapter). So one
+provider file can only ever serve ONE policy. Every policy group therefore
+gets its own file, and the paste-ready snippets below carry the ordered
+RULE-SET lines (order = priority, first match wins):
 
-  - clash/Global.list   every group except SEPARATE ones, in priority order;
-                        one provider + one RULE-SET line covers everything
-  - clash/<Group>.list  each SEPARATE group standalone. Advertising (the
-                        ~300k-rule ad block, 2/3 of the total volume) is kept
-                        out of Global.list and referenced separately, so the
-                        global file stays ~5.5MB and weak routers may skip ads.
+  clash/<Group>.list         one classical ruleset per policy group
+  clash/verge-merge.yaml     paste into Clash Verge Rev「全局扩展覆写配置」:
+                             rule-providers deep-merge into the profile, but
+                             `rules:` REPLACES the profile's rules entirely
+                             (enhance/merge.rs deep_merge), so a complete
+                             ordered rules list with a final MATCH is included
+  clash/openclash-module.ini  paste into an OpenClash 覆写模块 ([YAML] section;
+                             see .github/skills/openclash-user-guide in the
+                             OpenClash repo): +rule-providers merges the
+                             provider map, +rules PREPENDS the RULE-SET lines
+                             before the subscription's own rules
 
-Usage (mihomo core; every rule inside these files carries its own policy):
-
-    rule-providers:
-      ads:
-        type: http
-        behavior: classical
-        format: text
-        url: https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash/Advertising.list
-        interval: 86400
-      proxy-rules:
-        type: http
-        behavior: classical
-        format: text
-        url: https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash/Global.list
-        interval: 86400
-
-    rules:
-      - RULE-SET,ads,REJECT          # ad rules carry REJECT themselves
-      - RULE-SET,proxy-rules,DIRECT   # placeholder: rules carry their own policies
-      - MATCH,PROXY
-
-Clash evaluates rules top-down (first match wins), so Global.list is emitted
-in a fixed priority order: service groups most -> least specific, then the
-Proxy / Direct catch-alls. That is the same priority the quantumultx/ files
-were generated with (service > Proxy > Direct). Rules already claimed by an
-earlier group are dropped (dead rules anyway).
+The embedded policy column is kept in the exported files (mihomo ignores it,
+but it documents each file's target and keeps the files reusable as-is by
+Surge/Stash-family clients that DO honor embedded policies).
 """
 import sys
 from pathlib import Path
@@ -46,9 +32,12 @@ REPO = Path(__file__).resolve().parent.parent
 RULES_DIR = REPO / "quantumultx"
 CLASH_DIR = REPO / "clash"
 
-# Combined-file order, top to bottom. Clash is first-match-wins, so: service
-# groups most -> least specific (cross-group overlaps resolve in favor of the
-# earlier group), then the catch-alls.
+RAW = "https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash"
+MIRROR = "https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/clash"
+
+# RULE-SET ordering in the generated snippets, top to bottom. Clash is
+# first-match-wins: ad-block first, then service groups most -> least specific
+# (cross-group overlaps resolve in favor of the earlier group), then catch-alls.
 # Any new group in quantumultx/ must be added here (and to POLICY) or export fails.
 ORDER = [
     "Advertising",
@@ -60,15 +49,9 @@ ORDER = [
     "Proxy", "Direct",
 ]
 
-# Groups listed in SKIP are not exported at all (weak routers: e.g. drop the
-# ~300k-rule ad block). Everything in quantumultx/ must be in ORDER or SKIP.
+# Groups listed in SKIP are not exported at all. Everything in quantumultx/
+# must be in ORDER or SKIP.
 SKIP: set[str] = set()
-
-# Groups listed in SEPARATE are excluded from clash/Global.list and exported
-# as their own clash/<Group>.list instead (referenced with one extra
-# RULE-SET line). Advertising is the bulk of the total volume; keeping it out
-# shrinks the global file from ~17MB to ~5.5MB.
-SEPARATE = {"Advertising"}
 
 # Policy target per group — must match the proxy-group names in YOUR
 # Clash/OpenClash config. Advertising/Direct are fixed policies.
@@ -96,6 +79,10 @@ POLICY = {
     "Direct": "DIRECT",
 }
 
+# Final MATCH policy for the Verge Rev snippet (its rules list replaces the
+# profile's, so it must end with a MATCH).
+FINAL_POLICY = "🚀 节点选择"
+
 
 def convert(rtype: str, value: str) -> tuple[str, str, str] | None:
     """One QX rule type/value -> (clash type, clash value, extra) or None."""
@@ -119,15 +106,17 @@ def convert(rtype: str, value: str) -> tuple[str, str, str] | None:
 HEADER = [
     "# GENERATED by scripts/export_clash.py — do not edit this file; adjust",
     "# group order / policy names in the script and rerun it (CI does this weekly).",
-    "# Combined classical ruleset for mihomo / OpenClash (rule-provider:",
-    "# behavior classical, format text). Every rule carries its own policy —",
-    "# POLICY in the script must match your config's proxy-group names.",
+    "# Classical ruleset for mihomo (rule-provider: behavior classical, format text).",
+    "# NOTE: mihomo ignores the embedded policy column — the policy comes from",
+    "# the RULE-SET line in your config (see clash/verge-merge.yaml /",
+    "# clash/openclash-module.ini, generated with it).",
 ]
 
 
-def convert_group(path: Path, target: str, seen: set[tuple[str, str]]) -> tuple[list[str], dict[str, int]]:
-    """Convert one quantumultx/<Group>.list to classical lines (deduped via seen)."""
+def convert_group(path: Path, target: str) -> tuple[list[str], dict[str, int]]:
+    """Convert one quantumultx/<Group>.list to classical lines (deduped)."""
     lines: list[str] = []
+    seen: set[tuple[str, str]] = set()
     skipped: dict[str, int] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
@@ -143,7 +132,7 @@ def convert_group(path: Path, target: str, seen: set[tuple[str, str]]) -> tuple[
         ctype, cvalue, extra = got
         key = (ctype, cvalue.lower())
         if key in seen:
-            continue  # claimed by an earlier (higher-priority) group/line
+            continue
         seen.add(key)
         lines.append(f"{ctype},{cvalue},{target}{extra}")
     return lines, skipped
@@ -154,62 +143,87 @@ def main() -> int:
     order = [name for name in ORDER if name not in SKIP]
     missing = [name for name in order if name not in files]
     unknown = sorted(set(files) - set(order) - SKIP)
-    bad_separate = sorted(SEPARATE - set(ORDER) - SKIP)
-    if missing or unknown or bad_separate:
+    if missing or unknown:
         if missing:
             print(f"ERROR: quantumultx/ is missing expected lists: {', '.join(missing)}", file=sys.stderr)
         if unknown:
             print(f"ERROR: quantumultx/ has lists not declared in ORDER/POLICY: {', '.join(unknown)}", file=sys.stderr)
-        if bad_separate:
-            print(f"ERROR: SEPARATE names not in ORDER/SKIP: {', '.join(bad_separate)}", file=sys.stderr)
         return 1
 
     CLASH_DIR.mkdir(exist_ok=True)
-    standalone = SEPARATE - SKIP
 
-    # 1) Global.list: every non-SEPARATE group, in priority order.
-    lines: list[str] = []
-    seen: set[tuple[str, str]] = set()
-    skipped: dict[str, int] = {}
-    groups: list[str] = []
+    # 1) One classical ruleset per policy group.
     for name in order:
-        if name in standalone:
-            continue
-        target = POLICY[name]
-        before = len(lines)
-        got, sk = convert_group(files[name], target, seen)
-        lines.extend(got)
-        for k, v in sk.items():
-            skipped[k] = skipped.get(k, 0) + v
-        groups.append(f"{name} ({len(got)})")
-
-    skip_note = ", ".join(f"{t}={n}" for t, n in sorted(skipped.items())) or "none"
-    header = [
-        "# Proxy-Rules — clash/Global.list",
-        *HEADER,
-        "# Order is priority (first match wins): service groups (specific ->",
-        "# general), then Proxy, then Direct.",
-        f"# Separate (own files, not merged here): {', '.join(sorted(standalone)) or 'none'}.",
-        f"# Groups: {' + '.join(groups)}",
-        f"# Rules: {len(lines)} — deduped across groups; skipped (no Clash equivalent): {skip_note}",
-        "",
-    ]
-    (CLASH_DIR / "Global.list").write_text("\n".join(header + lines) + "\n", encoding="utf-8")
-    print(f"clash/Global.list: {len(lines)} rules (skipped: {skip_note})")
-
-    # 2) SEPARATE groups: one standalone classical file each.
-    for name in sorted(standalone):
-        seen = set()
-        got, sk = convert_group(files[name], POLICY[name], seen)
-        skip_note = ", ".join(f"{t}={n}" for t, n in sorted(sk.items())) or "none"
+        lines, skipped = convert_group(files[name], POLICY[name])
+        skip_note = ", ".join(f"{t}={n}" for t, n in sorted(skipped.items())) or "none"
         header = [
-            f"# Proxy-Rules — clash/{name}.list",
+            f"# Proxy-Rules — clash/{name}.list (policy: {POLICY[name]})",
             *HEADER,
-            f"# Rules: {len(got)} — skipped (no Clash equivalent): {skip_note}",
+            f"# Rules: {len(lines)} — skipped (no Clash equivalent): {skip_note}",
             "",
         ]
-        (CLASH_DIR / f"{name}.list").write_text("\n".join(header + got) + "\n", encoding="utf-8")
-        print(f"clash/{name}.list: {len(got)} rules (skipped: {skip_note})")
+        (CLASH_DIR / f"{name}.list").write_text("\n".join(header + lines) + "\n", encoding="utf-8")
+        print(f"clash/{name}.list: {len(lines)} rules (skipped: {skip_note})")
+
+    # 2) Clash Verge Rev「全局扩展覆写配置」paste block (pure YAML deep merge).
+    providers = []
+    for name in order:
+        providers += [
+            f"  {name}:",
+            "    type: http",
+            "    behavior: classical",
+            "    format: text",
+            f"    url: {RAW}/{name}.list",
+            "    interval: 86400",
+            "",
+        ]
+    rules = [f"  - RULE-SET,{name},{POLICY[name]}" for name in order]
+    rules.append(f"  - MATCH,{FINAL_POLICY}")
+    verge = [
+        "# GENERATED by scripts/export_clash.py — paste into Clash Verge Rev:",
+        "# 订阅页右上角「全局」→「全局扩展覆写配置」,整段粘贴。",
+        "# Verge Rev merge semantics: mapping keys deep-merge; `rules:` REPLACES",
+        "# the profile's rules, so this paste fully takes over routing (ends with MATCH).",
+        "# Provider files ignore their embedded policy column on mihomo — the policies",
+        "# below on the RULE-SET lines are what counts; they must match YOUR proxy-groups.",
+        "rule-providers:",
+        *providers,
+        "rules:",
+        *rules,
+        "",
+    ]
+    (CLASH_DIR / "verge-merge.yaml").write_text("\n".join(verge), encoding="utf-8")
+    print(f"clash/verge-merge.yaml: {len(order)} providers, {len(rules)} rules")
+
+    # 3) OpenClash 覆写模块 paste block ([YAML] section with + operators).
+    providers = []
+    for name in order:
+        providers += [
+            f"  {name}:",
+            "    type: http",
+            "    behavior: classical",
+            "    format: text",
+            f"    url: {MIRROR}/{name}.list",
+            "    interval: 86400",
+            "",
+        ]
+    rules = [f"  - RULE-SET,{name},{POLICY[name]}" for name in order]
+    module = [
+        "# GENERATED by scripts/export_clash.py — paste into an OpenClash 覆写模块:",
+        "# 运行状态页顶部「覆写模块」按钮 → 添加新模块(本地模块, 匹配配置文件填 all)",
+        "# → 编辑器粘贴本段 → 启用模块 → 重启插件(reload 无效)。",
+        "# [YAML] 段必需; +rule-providers 合并 provider, +rules 把规则前置到订阅规则之前。",
+        "# 注意: 部分环境会损坏 [YAML] 段里的中文/Emoji 组名(现象: proxy not found / ???),",
+        "# 遇此按 https://github.com/vernesong/OpenClash/discussions/5049 改用 [Overwrite] ruby 方案。",
+        "[YAML]",
+        "+rule-providers:",
+        *providers,
+        "+rules:",
+        *rules,
+        "",
+    ]
+    (CLASH_DIR / "openclash-module.ini").write_text("\n".join(module), encoding="utf-8")
+    print(f"clash/openclash-module.ini: {len(order)} providers, {len(rules)} rules")
     return 0
 
 
