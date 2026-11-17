@@ -77,7 +77,43 @@ https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/quantumultx/AI.list, tag=AI
 
 ## 用法 — OpenClash / Clash（mihomo）
 
-`rule-providers` 里远端引用两份文件（需要 mihomo 内核，OpenClash 默认内核即是）：
+需要 mihomo 内核（OpenClash 默认内核即是）。两种接入方式任选其一。
+
+### 方式一：OpenClash「全局扩展覆写配置」直接粘贴（推荐）
+
+插件设置 → 覆写设置 →「全局扩展覆写配置」编辑器里整段粘贴即可。`[YAML]` 是覆写模块的段名；`+` 前缀 = `+rule-providers` 合并 provider、`+rules` 把规则**前置**到订阅自带规则之前：
+
+```ini
+[YAML]
++rule-providers:
+  proxy-rules-ads:
+    type: http
+    behavior: classical
+    format: text
+    url: https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/clash/Advertising.list
+    interval: 86400
+    path: ./ruleset/proxy-rules-ads.list
+  proxy-rules:
+    type: http
+    behavior: classical
+    format: text
+    url: https://cdn.jsdelivr.net/gh/elricli/Proxy-Rules@main/clash/Global.list
+    interval: 86400
+    path: ./ruleset/proxy-rules.list
+
++rules:
+  - RULE-SET,proxy-rules-ads,REJECT
+  - RULE-SET,proxy-rules,DIRECT
+```
+
+- URL 默认用 jsDelivr 镜像（路由器直连可达）；路由器能直连 GitHub 就换成 `https://raw.githubusercontent.com/elricli/Proxy-Rules/main/clash/...`
+- 两行 `RULE-SET` 的第三参（`REJECT`/`DIRECT`）只是占位：classical 文件里**每条规则自带策略目标**（广告→`REJECT`、国内→`DIRECT`、服务→策略组名），真正生效的是文件内嵌的组名——所以组名核对/修改去 `scripts/export_clash.py` 的 `POLICY` 表，不在这段里
+- 这段覆写模块因此是纯 ASCII，天然避开部分 OpenClash/iStoreOS 环境覆写模块 `[YAML]` 段损坏中文/Emoji 策略组名的[已知坑](https://github.com/vernesong/OpenClash/discussions/5049)
+- 没被两个文件覆盖到的流量，落到订阅配置自带规则兜底，不会断流
+
+### 方式二：完全自定义配置 / 其他 Clash 客户端
+
+`rule-providers` + `rules` 直接写进配置文件：
 
 ```yaml
 rule-providers:
@@ -104,7 +140,7 @@ rules:
 
 说明：
 
-- 文件内每条规则自带策略目标：广告 → `REJECT`、国内 → `DIRECT`、其余 → 策略组名。**组名必须和你配置里的 proxy-groups 一致**，不一致就改 `scripts/export_clash.py` 里的 `POLICY` 表重跑。
+- 文件内每条规则自带策略目标：广告 → `REJECT`、国内 → `DIRECT`、其余 → 策略组名。**组名必须和你配置里的 proxy-groups 一致**（逐字符一致，含 Emoji），不一致就改 `scripts/export_clash.py` 里的 `POLICY` 表重跑。
 - 顺序即优先级（first-match-wins）：`广告 REJECT → 服务组（具体在前）→ Proxy → Direct`，与 QX 侧的减法优先级一致，跨组重复域名已在导出时去重（先出现的赢）。
 - 广告占全量 2/3（~30 万条 / 11MB），所以从全局文件拆出单放 `clash/Advertising.list`：全局文件只含 ~16 万条 / 5.7MB；不需要广告拦截就不引 `ads` 这个 provider。
 - 还想再裁：`scripts/export_clash.py` 的 `SKIP` 里加组名重跑，该组完全不导出。

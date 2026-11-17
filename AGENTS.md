@@ -27,6 +27,7 @@ scripts/export_clash.py   阶段 2：quantumultx/*.list → clash/（离线，�
 5. **POLICY 组名 = 用户三台设备配置里的策略组名**——要改先跟用户确认，改错会断分流。
 6. **IP 规则统一带 `no-resolve`**（export_clash.py 已统一处理）。
 7. **体积红线**：jsDelivr 单文件上限 20MB，`Advertising.list` 已 11MB，别再增大生成物。
+8. **策略组名内嵌在 .list 文件里，OpenClash 覆写模块保持纯 ASCII**：部分 OpenClash/iStoreOS 环境的覆写模块 `[YAML]` 段会损坏中文/Emoji 策略组名（[已知坑](https://github.com/vernesong/OpenClash/discussions/5049)）。我们的设计靠 classical 规则自带目标规避它——所以 README 里给用户的覆写粘贴段（`RULE-SET` 行）绝不能写中文/Emoji 组名，组名只允许出现在生成物和 `POLICY` 表里。改架构时保持这一点。
 
 ## 常见任务
 
