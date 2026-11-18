@@ -1,0 +1,4 @@
+# Additions on top of blackmatrix7 ChinaMax + Direct.
+# 100.64.0.0/10 = CGNAT space (Tailscale/WireGuard tailnets). Tailnet traffic is
+# raw-IP (no domain), so only an IP rule can keep it off the proxy path.
+IP-CIDR,100.64.0.0/10,Direct

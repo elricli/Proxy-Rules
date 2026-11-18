@@ -5,7 +5,7 @@
 # NOTE: mihomo ignores the embedded policy column — the policy comes from
 # the RULE-SET line in your config (see clash/verge-merge.yaml /
 # clash/openclash-module.ini, generated with it).
-# Rules: 122453 — skipped (no Clash equivalent): HOST-WILDCARD=1, USER-AGENT=55
+# Rules: 122454 — skipped (no Clash equivalent): HOST-WILDCARD=1, USER-AGENT=55
 
 DOMAIN,1-fss24-s0.streamhoster.com,DIRECT
 DOMAIN,14033.live.streamtheworld.com,DIRECT
@@ -110108,6 +110108,7 @@ IP-CIDR,1.68.0.0/14,DIRECT,no-resolve
 IP-CIDR,1.8.0.0/16,DIRECT,no-resolve
 IP-CIDR,1.80.0.0/12,DIRECT,no-resolve
 IP-CIDR,10.255.128.136/32,DIRECT,no-resolve
+IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
 IP-CIDR,101.0.0.0/22,DIRECT,no-resolve
 IP-CIDR,101.1.0.0/22,DIRECT,no-resolve
 IP-CIDR,101.101.100.0/24,DIRECT,no-resolve
